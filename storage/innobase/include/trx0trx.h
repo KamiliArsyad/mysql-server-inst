@@ -672,6 +672,38 @@ enum trx_rseg_type_t {
   TRX_RSEG_TYPE_NOREDO    /*!< non-redo rollback segment. */
 };
 
+#ifndef TRX0TRX_EVENT_PRINT_H
+#define TRX0TRX_EVENT_PRINT_H
+
+enum event_type_t {
+  EVENT_TYPE_BEGIN,
+  EVENT_TYPE_COMMIT,
+  EVENT_TYPE_PROMOTE, /*!< Promotes a transaction to rw (thus assigning it an id)*/
+  EVENT_TYPE_READ,
+  EVENT_TYPE_UPDATE,
+  EVENT_TYPE_INSERT
+};
+
+/**
+Prints a basic transaction event (begin, commit, promote).
+@param[in] trx_id      Transaction ID
+@param[in] event_type  Event type (must be EVENT_TYPE_BEGIN, EVENT_TYPE_COMMIT, or EVENT_TYPE_PROMOTE)
+*/
+void event_print_basic(trx_id_t trx_id, event_type_t event_type);
+
+/**
+Prints a detailed transaction event (read, update, insert).
+@param[in] trx_id             Transaction ID
+@param[in] event_type         Event type (must be EVENT_TYPE_READ, EVENT_TYPE_UPDATE, or EVENT_TYPE_INSERT)
+@param[in] table_name         Name of the table being operated on
+@param[in] object_id          ID of the object being read, updated, or inserted
+@param[in] last_writer_trx_id Transaction ID of the last transaction to modify this object
+                              (must be 0 for EVENT_TYPE_INSERT)
+*/
+void event_print(trx_id_t trx_id, event_type_t event_type, const char *table_name, uint64_t object_id, trx_id_t last_writer_trx_id);
+
+#endif /* TRX0TRX_EVENT_PRINT_H */
+
 struct trx_t {
   enum isolation_level_t {
 

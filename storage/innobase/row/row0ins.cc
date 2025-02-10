@@ -3421,6 +3421,28 @@ dberr_t row_ins_index_entry_set_vals(const dict_index_t *index, dtuple_t *entry,
 
   err = row_ins_index_entry_set_vals(node->index, node->entry, node->row);
 
+  dfield_t *row_id_dfield = dtuple_get_nth_field(node->row, 0);
+  if (!dfield_is_null(row_id_dfield)
+    && node->index->is_clustered()
+    && !static_cast<std::string>(node->table->name.m_name).starts_with("mysql")
+    ) {
+    const void *row_id = dfield_get_data(row_id_dfield);
+    ulint row_id_len = dfield_get_len(row_id_dfield);
+
+    if (row_id != nullptr && row_id_len > 0) {
+      // Interpret the row ID as a number
+      uint64_t id = 0;
+      const uint8_t *byte_ptr = static_cast<const uint8_t *>(row_id);
+
+      // Construct the ID assuming big-endian format
+      for (ulint i = 0; i < row_id_len; ++i) {
+        id = (id << 8) | byte_ptr[i];
+      }
+
+      event_print(node->trx_id, EVENT_TYPE_INSERT, node->table->name.m_name, id, 0);
+    }
+  }
+
   if (err != DB_SUCCESS) {
     return err;
   }

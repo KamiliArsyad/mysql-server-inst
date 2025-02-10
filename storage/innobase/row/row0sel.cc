@@ -5886,6 +5886,26 @@ next_rec:
     }
   }
 
+  if (!static_cast<std::string>(index->table_name).starts_with("mysql")
+    && rec != NULL
+    && !page_rec_is_infimum(rec)
+    && !page_rec_is_supremum(rec)
+    && index->is_clustered()
+  ) {
+    const void *row_id = rec;
+
+    // Interpret the row ID as a number
+    uint64_t id = 0;
+    const uint8_t *byte_ptr = static_cast<const uint8_t *>(row_id);
+
+    // Construct the ID assuming big-endian format
+    for (ulint i = 0; i < 4; ++i) {
+      id = (id << 8) | byte_ptr[i];
+    }
+
+    event_print(trx->id, EVENT_TYPE_READ, index->table_name, id, rec_get_trx_id(rec, index));
+  }
+
   if (moves_up) {
     bool move;
 

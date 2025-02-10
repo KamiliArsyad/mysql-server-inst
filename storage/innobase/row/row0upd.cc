@@ -3077,6 +3077,23 @@ func_exit:
   offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
                             UT_LOCATION_HERE, &heap);
 
+  const void *row_id = rec;
+
+  if (row_id != nullptr
+    && !static_cast<std::string>(node->table->name.m_name).starts_with("mysql")
+    ) {
+    // Interpret the row ID as a number
+    uint64_t id = 0;
+    const uint8_t *byte_ptr = static_cast<const uint8_t *>(row_id);
+
+    // Construct the ID assuming big-endian format
+    for (ulint i = 0; i < 4; ++i) {
+      id = (id << 8) | byte_ptr[i];
+    }
+
+    event_print(trx->id, EVENT_TYPE_UPDATE, node->table->name.m_name, id, rec_get_trx_id(rec, index));
+  }
+
   if (!node->has_clust_rec_x_lock) {
     err = lock_clust_rec_modify_check_and_lock(flags, pcur->get_block(), rec,
                                                index, offsets, thr);

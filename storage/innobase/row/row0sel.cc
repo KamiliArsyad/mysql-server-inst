@@ -40,6 +40,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "row0sel.h"
 
+#include <sched0sched.h>
 #include <sys/types.h>
 
 #include "btr0btr.h"
@@ -4917,6 +4918,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 
       offsets = rec_get_offsets(next_rec, index, offsets, ULINT_UNDEFINED,
                                 UT_LOCATION_HERE, &heap);
+      trx_scheduler_request(trx, EVENT_TYPE_READ);
       err = sel_set_rec_lock(pcur, next_rec, index, offsets,
                              prebuilt->select_mode, prebuilt->select_lock_type,
                              LOCK_GAP, thr, &mtr);
@@ -5030,6 +5032,7 @@ rec_loop:
 
       offsets = rec_get_offsets(rec, index, offsets, ULINT_UNDEFINED,
                                 UT_LOCATION_HERE, &heap);
+      trx_scheduler_request(trx, EVENT_TYPE_READ);
       err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                              prebuilt->select_lock_type, LOCK_ORDINARY, thr,
                              &mtr);
@@ -5150,6 +5153,7 @@ rec_loop:
       if (set_also_gap_locks && !trx->skip_gap_locks() &&
           prebuilt->select_lock_type != LOCK_NONE &&
           !dict_index_is_spatial(index)) {
+        trx_scheduler_request(trx, EVENT_TYPE_READ);
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
 
@@ -5184,6 +5188,7 @@ rec_loop:
       if (set_also_gap_locks && !trx->skip_gap_locks() &&
           prebuilt->select_lock_type != LOCK_NONE &&
           !dict_index_is_spatial(index)) {
+        trx_scheduler_request(trx, EVENT_TYPE_READ);
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
 
@@ -5242,6 +5247,7 @@ rec_loop:
     const bool use_semi_consistent =
         prebuilt->row_read_type == ROW_READ_TRY_SEMI_CONSISTENT &&
         !unique_search && index == clust_index && !trx_is_high_priority(trx);
+    trx_scheduler_request(trx, EVENT_TYPE_READ);
     err = sel_set_rec_lock(
         pcur, rec, index, offsets,
         use_semi_consistent ? SELECT_SKIP_LOCKED : prebuilt->select_mode,
@@ -5905,6 +5911,7 @@ next_rec:
 
     event_print(trx->id, EVENT_TYPE_READ, index->table_name, id, rec_get_trx_id(rec, index));
   }
+  trx_scheduler_release(trx);
 
   if (moves_up) {
     bool move;
@@ -6100,6 +6107,7 @@ func_exit:
 
   ut_a(!trx->has_search_latch);
 
+  trx_scheduler_release(trx);
   return err;
 }
 

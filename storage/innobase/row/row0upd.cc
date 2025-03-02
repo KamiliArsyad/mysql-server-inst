@@ -73,6 +73,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0sel.h"
 #include "trx0rec.h"
 #endif /* !UNIV_HOTBACKUP */
+#include <sched0sched.h>
+
 #include <algorithm>
 #include "lob0lob.h"
 #ifndef UNIV_HOTBACKUP
@@ -3094,6 +3096,7 @@ func_exit:
     event_print(trx->id, EVENT_TYPE_UPDATE, node->table->name.m_name, id, rec_get_trx_id(rec, index));
   }
 
+  trx_scheduler_request(trx, EVENT_TYPE_UPDATE);
   if (!node->has_clust_rec_x_lock) {
     err = lock_clust_rec_modify_check_and_lock(flags, pcur->get_block(), rec,
                                                index, offsets, thr);
@@ -3175,6 +3178,8 @@ exit_func:
   if (heap) {
     mem_heap_free(heap);
   }
+
+  trx_scheduler_release(trx);
   return (err);
 }
 

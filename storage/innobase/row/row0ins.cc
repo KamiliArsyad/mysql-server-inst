@@ -63,6 +63,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "usr0sess.h"
 
 #include <debug_sync.h>
+#include <sched0sched.h>
+
 #include "my_dbug.h"
 
 /*************************************************************************
@@ -3418,6 +3420,7 @@ dberr_t row_ins_index_entry_set_vals(const dict_index_t *index, dtuple_t *entry,
   DBUG_TRACE;
 
   ut_ad(dtuple_check_typed(node->row));
+  trx_scheduler_request(thr_get_trx(thr), EVENT_TYPE_INSERT);
 
   err = row_ins_index_entry_set_vals(node->index, node->entry, node->row);
 
@@ -3451,6 +3454,7 @@ dberr_t row_ins_index_entry_set_vals(const dict_index_t *index, dtuple_t *entry,
 
   err = row_ins_index_entry(node->index, node->entry, node->ins_multi_val_pos,
                             thr);
+  trx_scheduler_release(thr_get_trx(thr));
 
   DEBUG_SYNC(thr_get_trx(thr)->mysql_thd, "after_row_ins_index_entry_step");
 

@@ -60,6 +60,9 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0roll.h"
 #include "trx0rseg.h"
 #include "trx0trx.h"
+
+#include <sched0sched.h>
+
 #include "trx0undo.h"
 #include "trx0xa.h"
 #include "usr0sess.h"
@@ -1316,6 +1319,7 @@ static void trx_start_low(
   ut_ad(!(trx->in_innodb & TRX_FORCE_ROLLBACK));
   ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
 
+  trx_scheduler_request(trx, EVENT_TYPE_BEGIN);
   ++trx->version;
 
   /* Check whether it is an AUTOCOMMIT SELECT */
@@ -1457,6 +1461,7 @@ static void trx_start_low(
   ut_a(trx->error_state == DB_SUCCESS);
   event_print_basic(trx->id, EVENT_TYPE_BEGIN);
 
+  trx_scheduler_release(trx);
   MONITOR_INC(MONITOR_TRX_ACTIVE);
 }
 
@@ -2170,6 +2175,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
   assert_trx_nonlocking_or_in_list(trx);
   ut_ad(!trx_state_eq(trx, TRX_STATE_COMMITTED_IN_MEMORY));
   ut_ad(!mtr || mtr->is_active());
+  trx_scheduler_request(trx, EVENT_TYPE_COMMIT);
   trx_id_t trx_id = trx->id;
   /* undo_no is non-zero if we're doing the final commit. */
   if (trx->fts_trx != nullptr && trx->undo_no != 0 &&
@@ -2256,6 +2262,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 #endif
 
   trx_commit_in_memory(trx, mtr, serialised);
+  trx_scheduler_release(trx);
   event_print_basic(trx_id, EVENT_TYPE_COMMIT);
 }
 

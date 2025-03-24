@@ -5894,8 +5894,8 @@ next_rec:
 
   if (!static_cast<std::string>(index->table_name).starts_with("mysql")
     && rec != NULL
-    && !page_rec_is_infimum(rec)
-    && !page_rec_is_supremum(rec)
+    && !page_rec_is_infimum_low(page_offset(rec))
+    && !page_rec_is_supremum_low(page_offset(rec))
     && index->is_clustered()
   ) {
     const void *row_id = rec;

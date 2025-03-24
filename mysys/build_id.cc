@@ -70,12 +70,11 @@ struct elf_note {
 // A nonzero return here will terminate iteration.
 static int build_id_callback(dl_phdr_info *info, size_t, void *data_) {
   /*
-    The first object visited by the callback is the main program.
-    For the main program, the dlpi_name field will be an empty string.
+    Skip any preloaded shared objects by looking for the first object
+    with an empty `dlpi_name`, which indicates the main binary.
   */
-  if (info->dlpi_name == nullptr || strcmp(info->dlpi_name, "") != 0) {
-    assert(false);
-    return 0;
+  if (info->dlpi_name != nullptr && strcmp(info->dlpi_name, "") != 0) {
+    return 0;  // Skip preloaded shared libraries
   }
 
   callback_data *data = reinterpret_cast<callback_data *>(data_);
@@ -91,12 +90,11 @@ static int build_id_callback(dl_phdr_info *info, size_t, void *data_) {
            segment_size >= static_cast<ptrdiff_t>(sizeof(elf_note))) {
       if (note->nhdr.n_type == NT_GNU_BUILD_ID && note->nhdr.n_descsz != 0 &&
           note->nhdr.n_namesz == 4 && memcmp(note->name, "GNU", 4) == 0) {
-        // build_id is right after the name.
         data->build_id =
             reinterpret_cast<unsigned char *>(note) + sizeof(elf_note);
         data->size = note->nhdr.n_descsz;
         return 1;
-      }
+          }
       // Skip to the next note:
       size_t offset = sizeof(elf_note_struct) +
                       NOTE_ALIGN(note->nhdr.n_namesz) +
@@ -104,7 +102,7 @@ static int build_id_callback(dl_phdr_info *info, size_t, void *data_) {
       note = reinterpret_cast<elf_note *>(
           reinterpret_cast<unsigned char *>(note) + offset);
       segment_size -= offset;
-    }
+           }
   }
 
   return 0;

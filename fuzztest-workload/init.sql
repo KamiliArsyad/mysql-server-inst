@@ -1,16 +1,20 @@
 USE test1;
 
-DROP TABLE tblA;
-DROP TABLE tblB;
+DROP TABLE IF EXISTS tblA;
+DROP TABLE IF EXISTS tblB;
 
 CREATE TABLE tblA (
+                      id INT unsigned NOT NULL AUTO_INCREMENT,
                       txt_col VARCHAR(100),
-                      int_col INT
+                      int_col INT,
+                      PRIMARY KEY(id)
 ) ENGINE=InnoDB;
 
 CREATE TABLE tblB (
+                      id INT unsigned NOT NULL AUTO_INCREMENT,
                       txt_col VARCHAR(100),
-                      int_col INT
+                      int_col INT,
+                      PRIMARY KEY(id)
 ) ENGINE=InnoDB;
 
 DELIMITER $$

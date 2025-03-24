@@ -3451,10 +3451,13 @@ Prints a basic transaction event (begin, commit, promote).
 void event_print_basic(trx_id_t trx_id, event_type_t event_type) {
     assert(event_type == EVENT_TYPE_BEGIN || event_type == EVENT_TYPE_COMMIT || event_type == EVENT_TYPE_PROMOTE);
 
-    /* Print the event in the required format */
-    std::cout << std::this_thread::get_id() << "\t"
+    std::basic_stringstream<char> result;
+
+    result << std::this_thread::get_id() << "\t"
               << trx_id << "\t"
               << event_type_to_string(event_type) << std::endl;
+
+    std::cout << result.str();
 }
 
 /**
@@ -3475,8 +3478,9 @@ void event_print(trx_id_t trx_id, event_type_t event_type, const char *table_nam
         assert(last_writer_trx_id == 0);
     }
 
-    /* Print the event in the required format */
-    std::cout << std::this_thread::get_id() << "\t"
+    std::basic_stringstream<char> result;
+
+    result << std::this_thread::get_id() << "\t"
               << trx_id << "\t"
               << event_type_to_string(event_type) << "\t"
               << table_name << "\t"
@@ -3484,10 +3488,11 @@ void event_print(trx_id_t trx_id, event_type_t event_type, const char *table_nam
 
     /* Only print last_writer_trx_id if applicable */
     if (event_type == EVENT_TYPE_READ || event_type == EVENT_TYPE_UPDATE) {
-        std::cout << last_writer_trx_id;
+        result << last_writer_trx_id;
     }
 
-    std::cout << std::endl;
+    result << std::endl;
+    std::cout << result.str();
 }
 
 /** Set the transaction as a read-write transaction if it is not already

@@ -18,6 +18,7 @@ static std::unordered_map<trx_t*, bool> scheduler_blocked;
 
 static std::thread scheduler_thread;
 static std::atomic<bool> scheduler_running;
+static const char* SEED_STR = std::getenv("RANDOM_SEED");
 
 struct CompareTrxPriority {
   bool operator()(const TrxPriority &a, const TrxPriority &b) const {
@@ -31,7 +32,7 @@ static std::priority_queue<TrxPriority, std::vector<TrxPriority>, CompareTrxPrio
 static void init_rng() {
   if (rng_initialized.load(std::memory_order::acq_rel)) return;
 
-  const char* seed_str = std::getenv("RANDOM_SEED");
+  const char* seed_str = SEED_STR;
   int seed = 42;
   if (seed_str != nullptr) seed = std::stoi(seed_str);
 
@@ -51,14 +52,20 @@ constexpr int PERIODIC_WAKE = 10;
 static void trx_scheduler_run() {
   while (scheduler_running.load(std::memory_order_acquire)) {
     std::unique_lock lock(scheduler_mutex);
+    scheduler_cv.wait(lock, [] {
+        return !scheduler_running.load(std::memory_order_acquire)
+               || !scheduler_queue.empty();
+    });
 
-    scheduler_cv.wait(lock,
-      [] {
-        return !scheduler_queue.empty() || !scheduler_running.load();
-      });
+    if (!scheduler_running.load(std::memory_order_acquire)) {
+      break; // Shutdown signaled
+    }
 
-    trx_t* next_trx = scheduler_queue.top().second;  scheduler_queue.pop();
-    scheduler_blocked.erase(next_trx);
+    if (!scheduler_queue.empty()) {
+      trx_t* next_trx = scheduler_queue.top().second;
+      scheduler_queue.pop();
+      scheduler_blocked.erase(next_trx);
+    }
 
     scheduler_cv.notify_all();
   }
@@ -94,4 +101,15 @@ void trx_scheduler_release(trx_t *trx) {
 
   scheduler_blocked.erase(trx);
   scheduler_cv.notify_all();
+}
+
+void trx_shutdown_scheduler() {
+  {
+    std::lock_guard lock(scheduler_mutex);
+    scheduler_running.store(false, std::memory_order_release);
+    scheduler_cv.notify_all();
+  }
+  if (scheduler_thread.joinable()) {
+    scheduler_thread.join();
+  }
 }

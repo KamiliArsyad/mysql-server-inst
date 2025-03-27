@@ -23,15 +23,18 @@ RATIO_STR=3
 RATIO_INT=2
 RATIO_LOCK=5
 
-# Default total concurrency (sum of workers)
+# Default total concurrency
 DEFAULT_CONCURRENCY=10
 
-# Default limits (0 means "unlimited")
-MAX_TIME=0   # in seconds
-MAX_RUNS=0   # per worker
+# Default limits
+MAX_TIME=0
+MAX_RUNS=0
 
-# Random seed (either existing env var or default)
+# Random seed
 RANDOM_SEED="${RANDOM_SEED:-12345}"
+
+# Optional log directory (not set by default)
+LOG_DIR=""
 
 ##############################################################################
 # Usage function
@@ -40,16 +43,13 @@ usage() {
   echo "Usage: $0 [options]"
   echo "Options:"
   echo "  -c <concurrency>   Total number of worker processes (default: $DEFAULT_CONCURRENCY)"
-  echo "  -t <max_time_sec>  Maximum time (seconds) each worker runs (default: unlimited)"
-  echo "  -r <max_runs>      Maximum number of runs (iterations) per worker (default: unlimited)"
+  echo "  -t <max_time_sec>  Maximum time (seconds) per worker (0 = unlimited)"
+  echo "  -r <max_runs>      Maximum runs (iterations) per worker (0 = unlimited)"
+  echo "  -L <log_directory> If set, logs each worker's queries/results to separate files"
   echo "  -h                 Show this help message"
   echo
   echo "Environment variable (optional):"
-  echo "  RANDOM_SEED        Sets the seed for all MySQL sessions (default: 12345)"
-  echo
-  echo "Example:"
-  echo "  RANDOM_SEED=9999 $0 -c 10 -t 60 -r 100"
-  echo "  (Runs 10 workers with max 60 seconds or 100 runs each, all using seed=9999.)"
+  echo "  RANDOM_SEED        Seed for all MySQL sessions (default: 12345)"
   exit 1
 }
 
@@ -58,28 +58,15 @@ usage() {
 ##############################################################################
 CONCURRENCY=$DEFAULT_CONCURRENCY
 
-while getopts ":c:t:r:h" opt; do
+while getopts ":c:t:r:L:h" opt; do
   case $opt in
-    c)
-      CONCURRENCY="$OPTARG"
-      ;;
-    t)
-      MAX_TIME="$OPTARG"
-      ;;
-    r)
-      MAX_RUNS="$OPTARG"
-      ;;
-    h)
-      usage
-      ;;
-    \?)
-      echo "Invalid option: -$OPTARG" >&2
-      usage
-      ;;
-    :)
-      echo "Option -$OPTARG requires an argument." >&2
-      usage
-      ;;
+    c) CONCURRENCY="$OPTARG" ;;
+    t) MAX_TIME="$OPTARG" ;;
+    r) MAX_RUNS="$OPTARG" ;;
+    L) LOG_DIR="$OPTARG" ;;
+    h) usage ;;
+    \?) echo "Invalid option: -$OPTARG" >&2; usage ;;
+    :)  echo "Option -$OPTARG requires an argument." >&2; usage ;;
   esac
 done
 
@@ -117,13 +104,18 @@ echo "Concurrency: $CONCURRENCY total"
 echo " -> $STR_WORKERS string-test workers"
 echo " -> $INT_WORKERS int-test workers"
 echo " -> $LOCK_WORKERS locking-test workers"
-echo "Max time (seconds): $MAX_TIME (0 = unlimited)"
-echo "Max runs: $MAX_RUNS (0 = unlimited)"
+echo "Max time (seconds): $MAX_TIME"
+echo "Max runs: $MAX_RUNS"
 echo "Random seed: $RANDOM_SEED"
+if [ -n "$LOG_DIR" ]; then
+  echo "Logging to: $LOG_DIR"
+else
+  echo "Logging: disabled"
+fi
 echo "--------------------------------------------------------"
 
 ##############################################################################
-# 1) Run init script once (blocking)
+# 1) Run init script once
 ##############################################################################
 echo "Running init script: $WORKLOAD_DIR/$INIT_SCRIPT"
 mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" \
@@ -133,19 +125,23 @@ echo "Init done."
 echo
 
 ##############################################################################
-# 2) Function to run a workload script with time/runs bounding
+# 2) Function to run a workload script with optional logging
 ##############################################################################
 run_workload() {
-  local script_path="$1"
-  local max_time="$2"
-  local max_runs="$3"
+  local workload_name="$1"
+  local worker_id="$2"
+  local script_path="$3"
+  local max_time="$4"
+  local max_runs="$5"
 
-  local start_time=$(date +%s)
+  local start_time
+  start_time=$(date +%s)
   local run_count=0
 
   while true; do
     if [ "$max_time" -gt 0 ]; then
-      local now=$(date +%s)
+      local now
+      now=$(date +%s)
       local elapsed=$(( now - start_time ))
       if [ $elapsed -ge "$max_time" ]; then
         break
@@ -156,32 +152,44 @@ run_workload() {
       break
     fi
 
-    mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" \
-      --init-command="SELECT RAND($RANDOM_SEED);" \
-      < "$script_path"
+    if [ -n "$LOG_DIR" ]; then
+      # Append all query and result output to log file
+      mkdir -p "$LOG_DIR"
+      local log_file="$LOG_DIR/${workload_name}-worker-${worker_id}.log"
+      mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" \
+        --init-command="SELECT RAND($RANDOM_SEED);" \
+        -v -v \
+        < "$script_path" 2>&1 | tee -a "$log_file"
+    else
+      # No logging
+      mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" \
+        --init-command="SELECT RAND($RANDOM_SEED);" \
+        < "$script_path"
+    fi
 
     run_count=$(( run_count + 1 ))
   done
 }
 
 ##############################################################################
-# 3) Trap Ctrl-C so we can kill child processes
+# 3) Trap Ctrl-C to kill child processes
 ##############################################################################
 trap 'echo "Stopping all workers..."; kill 0; exit 1' SIGINT SIGTERM
 
 ##############################################################################
 # 4) Spawn workers
 ##############################################################################
+# For each script type, spawn the required number of background workers
 for i in $(seq 1 "$STR_WORKERS"); do
-  run_workload "$WORKLOAD_DIR/$STRING_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
+  run_workload "string" "$i" "$WORKLOAD_DIR/$STRING_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
 done
 
 for i in $(seq 1 "$INT_WORKERS"); do
-  run_workload "$WORKLOAD_DIR/$INT_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
+  run_workload "int" "$i" "$WORKLOAD_DIR/$INT_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
 done
 
 for i in $(seq 1 "$LOCK_WORKERS"); do
-  run_workload "$WORKLOAD_DIR/$LOCKING_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
+  run_workload "locking" "$i" "$WORKLOAD_DIR/$LOCKING_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
 done
 
 ##############################################################################

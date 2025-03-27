@@ -7,7 +7,7 @@ USE test1;
 
 /*--- Select for update ---*/
 START TRANSACTION;
-SELECT int_col
+SELECT id, int_col
 FROM tblB
 WHERE int_col IS NOT NULL
 ORDER BY RAND()
@@ -70,7 +70,7 @@ CALL InsertIfBelowThreshold();
 /*--- Conditional update with subselect -----*/
 START TRANSACTION;
 -- Read row conditionally:
-SELECT txt_col, int_col
+SELECT id, txt_col, int_col
 FROM tblA
 WHERE int_col < 100
 ORDER BY RAND()

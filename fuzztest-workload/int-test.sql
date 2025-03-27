@@ -23,7 +23,7 @@ COMMIT;
 /*--- Simple attempt for write skew: ---*/
 
 START TRANSACTION;
-SELECT int_col INTO @a_val
+SELECT id, int_col INTO @a_val
 FROM tblA
 ORDER BY RAND()
     LIMIT 1;
@@ -35,7 +35,7 @@ SET int_col = int_col + @a_val
 COMMIT;
 
 START TRANSACTION;
-SELECT int_col INTO @b_val
+SELECT id, int_col INTO @b_val
 FROM tblB
 ORDER BY RAND()
     LIMIT 1;

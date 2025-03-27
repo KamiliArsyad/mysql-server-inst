@@ -30,6 +30,9 @@ DEFAULT_CONCURRENCY=10
 MAX_TIME=0   # in seconds
 MAX_RUNS=0   # per worker
 
+# Random seed (either existing env var or default)
+RANDOM_SEED="${RANDOM_SEED:-12345}"
+
 ##############################################################################
 # Usage function
 ##############################################################################
@@ -41,9 +44,12 @@ usage() {
   echo "  -r <max_runs>      Maximum number of runs (iterations) per worker (default: unlimited)"
   echo "  -h                 Show this help message"
   echo
+  echo "Environment variable (optional):"
+  echo "  RANDOM_SEED        Sets the seed for all MySQL sessions (default: 12345)"
+  echo
   echo "Example:"
-  echo "  $0 -c 10 -t 60 -r 100"
-  echo "  (Runs 10 workers total, each will stop after 60 seconds or 100 runs, whichever is first.)"
+  echo "  RANDOM_SEED=9999 $0 -c 10 -t 60 -r 100"
+  echo "  (Runs 10 workers with max 60 seconds or 100 runs each, all using seed=9999.)"
   exit 1
 }
 
@@ -94,20 +100,15 @@ fi
 ##############################################################################
 # Compute how many workers per script using 3:2:5 ratio
 ##############################################################################
-# Sum of ratio
 RATIO_SUM=$((RATIO_STR + RATIO_INT + RATIO_LOCK))
 
-# Basic integer division for each
 STR_WORKERS=$(( CONCURRENCY * RATIO_STR / RATIO_SUM ))
 INT_WORKERS=$(( CONCURRENCY * RATIO_INT / RATIO_SUM ))
 LOCK_WORKERS=$(( CONCURRENCY * RATIO_LOCK / RATIO_SUM ))
 
-# Because of integer division, we may miss a few workers if there's rounding.
-# Optional: distribute leftover workers to some group
 ALLOCATED=$(( STR_WORKERS + INT_WORKERS + LOCK_WORKERS ))
 LEFTOVER=$(( CONCURRENCY - ALLOCATED ))
 if [ $LEFTOVER -gt 0 ]; then
-  # Just add leftover to locking-test (arbitrary choice) or distribute as needed
   LOCK_WORKERS=$(( LOCK_WORKERS + LEFTOVER ))
 fi
 
@@ -118,13 +119,16 @@ echo " -> $INT_WORKERS int-test workers"
 echo " -> $LOCK_WORKERS locking-test workers"
 echo "Max time (seconds): $MAX_TIME (0 = unlimited)"
 echo "Max runs: $MAX_RUNS (0 = unlimited)"
+echo "Random seed: $RANDOM_SEED"
 echo "--------------------------------------------------------"
 
 ##############################################################################
 # 1) Run init script once (blocking)
 ##############################################################################
 echo "Running init script: $WORKLOAD_DIR/$INIT_SCRIPT"
-mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" < "$WORKLOAD_DIR/$INIT_SCRIPT"
+mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" \
+  --init-command="SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE; SELECT RAND($RANDOM_SEED);" \
+  < "$WORKLOAD_DIR/$INIT_SCRIPT"
 echo "Init done."
 echo
 
@@ -136,12 +140,10 @@ run_workload() {
   local max_time="$2"
   local max_runs="$3"
 
-  # Record the start time (epoch seconds)
   local start_time=$(date +%s)
   local run_count=0
 
   while true; do
-    # Check time bound
     if [ "$max_time" -gt 0 ]; then
       local now=$(date +%s)
       local elapsed=$(( now - start_time ))
@@ -150,19 +152,16 @@ run_workload() {
       fi
     fi
 
-    # Check runs bound
     if [ "$max_runs" -gt 0 ] && [ "$run_count" -ge "$max_runs" ]; then
       break
     fi
 
-    # Run the SQL file
-    mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" < "$script_path"
+    mysql -u "$DB_USER" --socket="$SOCKET_PATH" -h "$DB_HOST" \
+      --init-command="SELECT RAND($RANDOM_SEED);" \
+      < "$script_path"
 
-    # Increment run count
     run_count=$(( run_count + 1 ))
   done
-
-  # End of worker
 }
 
 ##############################################################################
@@ -173,17 +172,14 @@ trap 'echo "Stopping all workers..."; kill 0; exit 1' SIGINT SIGTERM
 ##############################################################################
 # 4) Spawn workers
 ##############################################################################
-# Spawn string-test workers
 for i in $(seq 1 "$STR_WORKERS"); do
   run_workload "$WORKLOAD_DIR/$STRING_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
 done
 
-# Spawn int-test workers
 for i in $(seq 1 "$INT_WORKERS"); do
   run_workload "$WORKLOAD_DIR/$INT_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
 done
 
-# Spawn locking-test workers
 for i in $(seq 1 "$LOCK_WORKERS"); do
   run_workload "$WORKLOAD_DIR/$LOCKING_SCRIPT" "$MAX_TIME" "$MAX_RUNS" &
 done

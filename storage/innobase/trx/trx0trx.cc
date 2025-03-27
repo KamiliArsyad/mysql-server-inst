@@ -3443,6 +3443,24 @@ static const char* event_type_to_string(event_type_t event_type) {
     }
 }
 
+static std::ofstream g_file;
+static std::mutex file_lock;
+static std::ostream& get_out_stream() {
+  static bool init = false;
+  static std::ostream* out_ptr = &std::cout;
+  if (!init) {
+    init = true;
+    const char* path = std::getenv("OUT_FILE");
+    if (path) {
+      g_file.open(path, std::ios::out | std::ios::app);
+      if (g_file.is_open()) {
+        out_ptr = &g_file;
+      }
+    }
+  }
+  return *out_ptr;
+}
+
 /**
 Prints a basic transaction event (begin, commit, promote).
 @param[in] trx_id      Transaction ID
@@ -3457,7 +3475,8 @@ void event_print_basic(trx_id_t trx_id, event_type_t event_type) {
               << trx_id << "\t"
               << event_type_to_string(event_type) << std::endl;
 
-    std::cout << result.str();
+    std::unique_lock lock(file_lock);
+    get_out_stream() << result.str();
 }
 
 /**
@@ -3492,7 +3511,8 @@ void event_print(trx_id_t trx_id, event_type_t event_type, const char *table_nam
     }
 
     result << std::endl;
-    std::cout << result.str();
+    std::unique_lock lock(file_lock);
+    get_out_stream() << result.str();
 }
 
 /** Set the transaction as a read-write transaction if it is not already

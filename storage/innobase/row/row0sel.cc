@@ -4429,6 +4429,7 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
   DBUG_TRACE;
 
   dict_index_t *index = prebuilt->index;
+  bool accepted_read = false;
   bool comp = dict_table_is_comp(index->table);
   const dtuple_t *search_tuple = prebuilt->search_tuple;
   btr_pcur_t *pcur = prebuilt->pcur;
@@ -5271,6 +5272,7 @@ rec_loop:
         break;
       case DB_SKIP_LOCKED:
         if (prebuilt->select_mode == SELECT_SKIP_LOCKED) {
+          accepted_read = false;
           goto next_rec;
         }
         DEBUG_SYNC_C("semi_consistent_read_would_wait");
@@ -5286,6 +5288,7 @@ rec_loop:
 
         if (old_vers == nullptr) {
           /* The row was not yet committed */
+          accepted_read = false;
           goto next_rec;
         }
 
@@ -5306,6 +5309,7 @@ rec_loop:
         goto lock_wait_or_error;
       case DB_RECORD_NOT_FOUND:
         if (dict_index_is_spatial(index)) {
+          accepted_read = false;
           goto next_rec;
         } else {
           goto lock_wait_or_error;
@@ -5351,6 +5355,7 @@ rec_loop:
           /* The row did not exist yet in
           the read view */
 
+          accepted_read = false;
           goto next_rec;
         }
 
@@ -5378,6 +5383,7 @@ rec_loop:
         index entry. */
         switch (row_search_idx_cond_check(buf, prebuilt, rec, offsets)) {
           case ICP_NO_MATCH:
+            accepted_read = false;
             goto next_rec;
           case ICP_OUT_OF_RANGE:
             err = DB_RECORD_NOT_FOUND;
@@ -5433,6 +5439,7 @@ rec_loop:
       goto normal_return;
     }
 
+    accepted_read = false;
     goto next_rec;
   }
 
@@ -5440,6 +5447,7 @@ rec_loop:
   switch (row_search_idx_cond_check(buf, prebuilt, rec, offsets)) {
     case ICP_NO_MATCH:
       prebuilt->try_unlock(true);
+      accepted_read = false;
       goto next_rec;
     case ICP_OUT_OF_RANGE:
       err = DB_RECORD_NOT_FOUND;
@@ -5481,10 +5489,12 @@ rec_loop:
           ut_ad(prebuilt->select_lock_type == LOCK_NONE ||
                 dict_index_is_spatial(index));
 
+          accepted_read = false;
           goto next_rec;
         }
         break;
       case DB_SKIP_LOCKED:
+        accepted_read = false;
         goto next_rec;
       case DB_SUCCESS_LOCKED_REC:
         ut_a(clust_rec != nullptr);
@@ -5509,6 +5519,7 @@ rec_loop:
       match and calls unlock_row(). */
       prebuilt->try_unlock(true);
 
+      accepted_read = false;
       goto next_rec;
     }
 
@@ -5538,6 +5549,7 @@ rec_loop:
       if (!row_sel_store_mysql_rec(buf, prebuilt, result_rec, vrow, true,
                                    clust_index, prebuilt->index, offsets, false,
                                    nullptr, prebuilt->blob_heap)) {
+        accepted_read = false;
         goto next_rec;
       }
     }
@@ -5583,6 +5595,8 @@ rec_loop:
   } else {
     result_rec = rec;
   }
+
+  accepted_read = true;
 
   /* We found a qualifying record 'result_rec'. At this point,
   'offsets' are associated with 'result_rec'. */
@@ -5655,6 +5669,7 @@ rec_loop:
         level or when rolling back a recovered
         transaction. Rollback happens at a lower
         level, not here. */
+        accepted_read = false;
         goto next_rec;
       }
 
@@ -5699,9 +5714,11 @@ rec_loop:
 
       if (next_buf != buf) {
         row_sel_enqueue_cache_row_for_mysql(next_buf, prebuilt);
+        accepted_read = true;
       }
     } else {
       row_sel_enqueue_cache_row_for_mysql(buf, prebuilt);
+      accepted_read = true;
     }
 
     if (prebuilt->n_fetch_cached < max_rows_to_cache) {
@@ -5729,6 +5746,7 @@ rec_loop:
       memcpy(buf + 4, result_rec - rec_offs_extra_size(offsets),
              rec_offs_size(offsets));
       mach_write_to_4(buf, rec_offs_extra_size(offsets) + 4);
+      accepted_read = true;
     } else if (!prebuilt->idx_cond && !prebuilt->innodb_api) {
       /* The record was not yet converted to MySQL format. */
       if (!row_sel_store_mysql_rec(
@@ -5743,7 +5761,10 @@ rec_loop:
         isolation level or when rolling back a
         recovered transaction. Rollback
         happens at a lower level, not here. */
+        accepted_read = false;
         goto next_rec;
+      } else {
+        accepted_read = true;
       }
     }
 
@@ -5763,6 +5784,7 @@ rec_loop:
   HANDLER command where the user can move the cursor with PREV or NEXT
   even after a unique search. */
 
+  accepted_read = true;
   err = DB_SUCCESS;
 
 idx_cond_failed:
@@ -5894,6 +5916,7 @@ next_rec:
 
   if (!static_cast<std::string>(index->table_name).starts_with("mysql")
     && rec != NULL
+    && accepted_read
     && !page_rec_is_infimum_low(page_offset(rec))
     && !page_rec_is_supremum_low(page_offset(rec))
     && index->is_clustered()
@@ -5911,6 +5934,7 @@ next_rec:
 
     event_print(trx->id, EVENT_TYPE_READ, index->table_name, id, rec_get_trx_id(rec, index));
   }
+  accepted_read = false;
   trx_scheduler_release(trx);
 
   if (moves_up) {

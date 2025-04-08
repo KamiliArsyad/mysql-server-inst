@@ -80,10 +80,10 @@ void init_scheduler_if_needed() {
 void trx_scheduler_request(trx_t *trx, event_type_t event_type) {
   init_scheduler_if_needed();
   std::unique_lock lock(scheduler_mutex);
+  int rnd_priority = get_random_priority();
 
   // Put into queue if not yet
   if (!scheduler_blocked.contains(trx)) {
-    int rnd_priority = get_random_priority();
     scheduler_queue.push({rnd_priority, trx});
     scheduler_blocked[trx] = true;
     scheduler_cv.notify_all();
@@ -94,6 +94,10 @@ void trx_scheduler_request(trx_t *trx, event_type_t event_type) {
     [&] {
       return !scheduler_blocked.contains(trx);
     });
+
+  // Random delay
+  const int delay = rnd_priority % 1000;
+  std::this_thread::sleep_for(std::chrono::microseconds(delay));
 }
 
 void trx_scheduler_release(trx_t *trx) {

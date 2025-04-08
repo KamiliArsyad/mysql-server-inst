@@ -1,0 +1,9 @@
+{
+  "iteration": 20,
+  "prog-bin": "/home/arkamili/mysql-inst/mysql-server/cmake-build-debug/mysql/bin/mysqld --defaults-file=/home/arkamili/mysql-inst/mysql-server/cmake-build-debug/mysql/etc/my.cnf",
+  "elle-bin": "/home/arkamili/elle-cli/target/elle-cli-0.1.8-standalone.jar --model list-append",
+  "edn-maker-bin": "/home/arkamili/CLionProjects/multiverVerifier/cmake-build-debug/multiverVerifier",
+  "workload-bin": "/home/arkamili/mysql-inst/mysql-server/fuzztest-workload/run-known-bug-test.sh",
+  "shutdown-cmd": "/home/arkamili/mysql-inst/mysql-server/cmake-build-debug/mysql/bin/mysqladmin --socket=/home/arkamili/mysql-inst/mysql-server/cmake-build-debug/mysql/mysql.sock -u root -h localhost shutdown",
+  "check-ready-cmd": "/home/arkamili/mysql-inst/mysql-server/cmake-build-debug/mysql/bin/mysqladmin --socket=/home/arkamili/mysql-inst/mysql-server/cmake-build-debug/mysql/mysql.sock -u root -h localhost ping"
+}

@@ -1,0 +1,207 @@
+./bug_runner.sh -N 100
+== Run 1 ==
+Run 1: '2a' found. Time: 50 ms
+== Run 2 ==
+Run 2: '2a' found. Time: 46 ms
+== Run 3 ==
+Run 3: '2a' found. Time: 46 ms
+== Run 4 ==
+Run 4: '2a' found. Time: 52 ms
+== Run 5 ==
+Run 5: '2a' found. Time: 49 ms
+== Run 6 ==
+Run 6: '2a' found. Time: 44 ms
+== Run 7 ==
+Run 7: '2a' found. Time: 49 ms
+== Run 8 ==
+Run 8: '2a' found. Time: 42 ms
+== Run 9 ==
+Run 9: '2a' found. Time: 50 ms
+== Run 10 ==
+Run 10: '2a' found. Time: 54 ms
+== Run 11 ==
+Run 11: '2a' found. Time: 62 ms
+== Run 12 ==
+Run 12: '2a' found. Time: 52 ms
+== Run 13 ==
+Run 13: '2a' found. Time: 48 ms
+== Run 14 ==
+Run 14: '2a' found. Time: 61 ms
+== Run 15 ==
+Run 15: '2a' NOT found. Time: 69 ms
+== Run 16 ==
+Run 16: '2a' found. Time: 49 ms
+== Run 17 ==
+Run 17: '2a' found. Time: 40 ms
+== Run 18 ==
+Run 18: '2a' found. Time: 63 ms
+== Run 19 ==
+Run 19: '2a' found. Time: 55 ms
+== Run 20 ==
+Run 20: '2a' found. Time: 51 ms
+== Run 21 ==
+Run 21: '2a' found. Time: 53 ms
+== Run 22 ==
+Run 22: '2a' found. Time: 42 ms
+== Run 23 ==
+Run 23: '2a' found. Time: 38 ms
+== Run 24 ==
+Run 24: '2a' NOT found. Time: 41 ms
+== Run 25 ==
+Run 25: '2a' found. Time: 43 ms
+== Run 26 ==
+Run 26: '2a' found. Time: 44 ms
+== Run 27 ==
+Run 27: '2a' found. Time: 48 ms
+== Run 28 ==
+Run 28: '2a' found. Time: 40 ms
+== Run 29 ==
+Run 29: '2a' found. Time: 54 ms
+== Run 30 ==
+Run 30: '2a' NOT found. Time: 55 ms
+== Run 31 ==
+Run 31: '2a' found. Time: 55 ms
+== Run 32 ==
+Run 32: '2a' found. Time: 42 ms
+== Run 33 ==
+Run 33: '2a' found. Time: 44 ms
+== Run 34 ==
+Run 34: '2a' found. Time: 47 ms
+== Run 35 ==
+Run 35: '2a' found. Time: 56 ms
+== Run 36 ==
+Run 36: '2a' found. Time: 41 ms
+== Run 37 ==
+Run 37: '2a' found. Time: 45 ms
+== Run 38 ==
+Run 38: '2a' found. Time: 44 ms
+== Run 39 ==
+Run 39: '2a' found. Time: 39 ms
+== Run 40 ==
+Run 40: '2a' found. Time: 36 ms
+== Run 41 ==
+Run 41: '2a' found. Time: 53 ms
+== Run 42 ==
+Run 42: '2a' found. Time: 41 ms
+== Run 43 ==
+Run 43: '2a' found. Time: 48 ms
+== Run 44 ==
+Run 44: '2a' found. Time: 41 ms
+== Run 45 ==
+Run 45: '2a' found. Time: 42 ms
+== Run 46 ==
+Run 46: '2a' found. Time: 48 ms
+== Run 47 ==
+Run 47: '2a' found. Time: 49 ms
+== Run 48 ==
+Run 48: '2a' found. Time: 43 ms
+== Run 49 ==
+Run 49: '2a' found. Time: 47 ms
+== Run 50 ==
+Run 50: '2a' found. Time: 44 ms
+== Run 51 ==
+Run 51: '2a' found. Time: 42 ms
+== Run 52 ==
+Run 52: '2a' found. Time: 38 ms
+== Run 53 ==
+Run 53: '2a' found. Time: 46 ms
+== Run 54 ==
+Run 54: '2a' found. Time: 51 ms
+== Run 55 ==
+Run 55: '2a' found. Time: 40 ms
+== Run 56 ==
+Run 56: '2a' NOT found. Time: 50 ms
+== Run 57 ==
+Run 57: '2a' found. Time: 57 ms
+== Run 58 ==
+Run 58: '2a' found. Time: 49 ms
+== Run 59 ==
+Run 59: '2a' found. Time: 45 ms
+== Run 60 ==
+Run 60: '2a' found. Time: 49 ms
+== Run 61 ==
+Run 61: '2a' found. Time: 59 ms
+== Run 62 ==
+Run 62: '2a' NOT found. Time: 53 ms
+== Run 63 ==
+Run 63: '2a' found. Time: 41 ms
+== Run 64 ==
+Run 64: '2a' found. Time: 38 ms
+== Run 65 ==
+Run 65: '2a' found. Time: 56 ms
+== Run 66 ==
+Run 66: '2a' found. Time: 47 ms
+== Run 67 ==
+Run 67: '2a' found. Time: 38 ms
+== Run 68 ==
+Run 68: '2a' found. Time: 37 ms
+== Run 69 ==
+Run 69: '2a' found. Time: 44 ms
+== Run 70 ==
+Run 70: '2a' found. Time: 36 ms
+== Run 71 ==
+Run 71: '2a' found. Time: 36 ms
+== Run 72 ==
+Run 72: '2a' found. Time: 43 ms
+== Run 73 ==
+Run 73: '2a' found. Time: 45 ms
+== Run 74 ==
+Run 74: '2a' found. Time: 46 ms
+== Run 75 ==
+Run 75: '2a' found. Time: 48 ms
+== Run 76 ==
+Run 76: '2a' found. Time: 53 ms
+== Run 77 ==
+Run 77: '2a' found. Time: 46 ms
+== Run 78 ==
+Run 78: '2a' found. Time: 47 ms
+== Run 79 ==
+Run 79: '2a' found. Time: 44 ms
+== Run 80 ==
+Run 80: '2a' found. Time: 42 ms
+== Run 81 ==
+Run 81: '2a' found. Time: 60 ms
+== Run 82 ==
+Run 82: '2a' found. Time: 44 ms
+== Run 83 ==
+Run 83: '2a' found. Time: 50 ms
+== Run 84 ==
+Run 84: '2a' NOT found. Time: 42 ms
+== Run 85 ==
+Run 85: '2a' found. Time: 45 ms
+== Run 86 ==
+Run 86: '2a' found. Time: 39 ms
+== Run 87 ==
+Run 87: '2a' found. Time: 52 ms
+== Run 88 ==
+Run 88: '2a' found. Time: 41 ms
+== Run 89 ==
+Run 89: '2a' found. Time: 45 ms
+== Run 90 ==
+Run 90: '2a' found. Time: 48 ms
+== Run 91 ==
+Run 91: '2a' found. Time: 38 ms
+== Run 92 ==
+Run 92: '2a' found. Time: 39 ms
+== Run 93 ==
+Run 93: '2a' found. Time: 46 ms
+== Run 94 ==
+Run 94: '2a' found. Time: 40 ms
+== Run 95 ==
+Run 95: '2a' found. Time: 45 ms
+== Run 96 ==
+Run 96: '2a' found. Time: 42 ms
+== Run 97 ==
+Run 97: '2a' found. Time: 39 ms
+== Run 98 ==
+Run 98: '2a' found. Time: 50 ms
+== Run 99 ==
+Run 99: '2a' found. Time: 43 ms
+== Run 100 ==
+Run 100: '2a' found. Time: 46 ms
+===========
+Total runs        : 100
+Runs with '2a'    : 94
+Runs without it   : 6
+Avg run time (ms) : 47
+Total time (ms)   : 4704

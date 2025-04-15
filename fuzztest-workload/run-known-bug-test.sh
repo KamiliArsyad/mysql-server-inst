@@ -48,7 +48,6 @@ session1() {
 SET SESSION transaction_isolation='REPEATABLE-READ';
 START TRANSACTION;
 SELECT 't1', NOW(), id, col FROM some_table WHERE col IN (5) OR id IN (3) FOR UPDATE;
-DO SLEEP(0.0001);
 DELETE FROM some_table WHERE col IN (5) OR id IN (3);
 INSERT INTO some_table(id, col) VALUES (3, 5);
 SELECT 't1 done', NOW();
@@ -59,7 +58,6 @@ EOF
 # Session 2: Starts after 1 sec, runs two SELECT ... FOR UPDATE queries.
 session2() {
   mysql -u "$DB_USER" -h "$DB_HOST" $SOCKET_OPTION "$DB_NAME" <<'EOF'
-DO SLEEP(0.00072);
 SET SESSION transaction_isolation='REPEATABLE-READ';
 START TRANSACTION;
 SELECT 't2 starting', NOW();

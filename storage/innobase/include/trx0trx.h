@@ -672,38 +672,6 @@ enum trx_rseg_type_t {
   TRX_RSEG_TYPE_NOREDO    /*!< non-redo rollback segment. */
 };
 
-#ifndef TRX0TRX_EVENT_PRINT_H
-#define TRX0TRX_EVENT_PRINT_H
-
-enum event_type_t {
-  EVENT_TYPE_BEGIN,
-  EVENT_TYPE_COMMIT,
-  EVENT_TYPE_PROMOTE, /*!< Promotes a transaction to rw (thus assigning it an id)*/
-  EVENT_TYPE_READ,
-  EVENT_TYPE_UPDATE,
-  EVENT_TYPE_INSERT
-};
-
-/**
-Prints a basic transaction event (begin, commit, promote).
-@param[in] trx_id      Transaction ID
-@param[in] event_type  Event type (must be EVENT_TYPE_BEGIN, EVENT_TYPE_COMMIT, or EVENT_TYPE_PROMOTE)
-*/
-void event_print_basic(trx_id_t trx_id, event_type_t event_type);
-
-/**
-Prints a detailed transaction event (read, update, insert).
-@param[in] trx_id             Transaction ID
-@param[in] event_type         Event type (must be EVENT_TYPE_READ, EVENT_TYPE_UPDATE, or EVENT_TYPE_INSERT)
-@param[in] table_name         Name of the table being operated on
-@param[in] object_id          ID of the object being read, updated, or inserted
-@param[in] last_writer_trx_id Transaction ID of the last transaction to modify this object
-                              (must be 0 for EVENT_TYPE_INSERT)
-*/
-void event_print(trx_id_t trx_id, event_type_t event_type, const char *table_name, uint64_t object_id, trx_id_t last_writer_trx_id);
-
-#endif /* TRX0TRX_EVENT_PRINT_H */
-
 struct trx_t {
   enum isolation_level_t {
 
@@ -1161,6 +1129,27 @@ struct trx_t {
   @return true iff in this transaction's isolation level locks on records which
                do not match the WHERE clause are released */
   bool releases_non_matching_rows() const { return skip_gap_locks(); }
+
+   /** -------------------------------------------------------------------
+    * IsoFuzz Fields for Two-Phase Read Logging.
+    * These fields support the "tentative capture, commit on confirmation"
+    * logging strategy to ensure reads are logged with full context only when
+    * they become part of a result set.
+    */
+
+  /** A struct to hold the context of a potential read operation. */
+  struct TentativeRead {
+    const char* table_name;
+    const char* column_name;      // The column from the predicate (e.g., 'col')
+    uint64_t    primary_key_val;  // The PK value found in the secondary index record
+    uint64_t    row_identifier;   // The final row_id, for logging
+    trx_id_t    writer_trx_id;    // The version, found in the clustered record
+    bool        is_enriched;      // Flag to know if we've found the writer_id
+  };
+
+  /** A transaction-local list of reads that have been evaluated against
+  a predicate but not yet confirmed as part of the final result. */
+  std::vector<TentativeRead> m_tentative_reads;
 };
 
 #ifndef UNIV_HOTBACKUP

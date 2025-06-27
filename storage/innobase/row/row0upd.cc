@@ -76,6 +76,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <sched0sched.h>
 
 #include <algorithm>
+
+#include "isofuzz0isofuzz.h"
 #include "lob0lob.h"
 #ifndef UNIV_HOTBACKUP
 #include "current_thd.h"
@@ -3079,24 +3081,61 @@ func_exit:
   offsets = rec_get_offsets(rec, index, offsets_, ULINT_UNDEFINED,
                             UT_LOCATION_HERE, &heap);
 
-  const void *row_id = rec;
+  /******************************************************************//**
+    IsoFuzz: Update/Delete Operation Logging (Clustered Index)
+    **********************************************************************/
+  /* GUARD: Only run on user tables. */
+  if (!node->table->is_dd_table && !node->table->is_intrinsic()) {
+    trx_t* trx = thr_get_trx(thr);
 
-  if (row_id != nullptr
-    && !static_cast<std::string>(node->table->name.m_name).starts_with("mysql")
-    ) {
-    // Interpret the row ID as a number
-    uint64_t id = 0;
-    const uint8_t *byte_ptr = static_cast<const uint8_t *>(row_id);
+    // Schedule the entire logical operation ONCE.
+    isofuzz_schedule_operation(static_cast<isofuzz_trx_handle_t>(trx));
 
-    // Construct the ID assuming big-endian format
-    for (ulint i = 0; i < 4; ++i) {
-      id = (id << 8) | byte_ptr[i];
+    trx_id_t writer_trx_id = rec_get_trx_id(rec, index);
+
+    // Get the primary key value of the row being affected.
+    uint64_t pk_val = 0;
+    ulint pk_len;
+    const byte* pk_data = rec_get_nth_field(index, rec, offsets, 0, &pk_len);
+    if (pk_len != UNIV_SQL_NULL && pk_len <= sizeof(uint64_t)) {
+        for (ulint i = 0; i < pk_len; ++i) {
+            pk_val = (pk_val << 8) | pk_data[i];
+        }
     }
 
-    event_print(trx->id, EVENT_TYPE_UPDATE, node->table->name.m_name, id, rec_get_trx_id(rec, index));
-  }
+    if (node->is_delete) {
+      //
+      // FOR DELETE: This is a delete operation. Log it as a single event.
+      // We log it as an update to the primary key, which is a good representative.
+      //
+      const dict_field_t* pk_field = index->get_field(0);
 
-  trx_scheduler_request(trx, EVENT_TYPE_UPDATE);
+      IsoFuzzObject obj;
+      obj.table_name = node->table->name.m_name;
+      obj.column_name = pk_field->name; // Using PK as the representative column.
+      obj.row_identifier = pk_val;
+
+      // Log this single event and we are done.
+      isofuzz_log_column_operation(static_cast<isofuzz_trx_handle_t>(trx),
+                                IsoFuzzOpType::WRITE_UPDATE, obj, writer_trx_id);
+    } else {
+      // This is a standard UPDATE. Log one event for each modified column.
+      for (ulint i = 0; i < upd_get_n_fields(node->update); ++i) {
+        const upd_field_t* ufield = upd_get_nth_field(node->update, i);
+        const dict_field_t* dfield = index->get_field(ufield->field_no);
+
+        IsoFuzzObject obj;
+        obj.table_name = node->table->name.m_name;
+        obj.column_name = dfield->name;
+        obj.row_identifier = pk_val;
+
+        isofuzz_log_column_operation(static_cast<isofuzz_trx_handle_t>(trx),
+                                  IsoFuzzOpType::WRITE_UPDATE, obj, writer_trx_id);
+      }
+    }
+  }
+  /* End of IsoFuzz Update/Delete Operation Logging */
+
   if (!node->has_clust_rec_x_lock) {
     err = lock_clust_rec_modify_check_and_lock(flags, pcur->get_block(), rec,
                                                index, offsets, thr);
@@ -3179,7 +3218,6 @@ exit_func:
     mem_heap_free(heap);
   }
 
-  trx_scheduler_release(trx);
   return (err);
 }
 

@@ -65,6 +65,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include <debug_sync.h>
 #include <sched0sched.h>
 
+#include "isofuzz0isofuzz.h"
 #include "my_dbug.h"
 
 /*************************************************************************
@@ -3420,37 +3421,48 @@ dberr_t row_ins_index_entry_set_vals(const dict_index_t *index, dtuple_t *entry,
   DBUG_TRACE;
 
   ut_ad(dtuple_check_typed(node->row));
-  trx_scheduler_request(thr_get_trx(thr), EVENT_TYPE_INSERT);
-
   err = row_ins_index_entry_set_vals(node->index, node->entry, node->row);
-
-  dfield_t *row_id_dfield = dtuple_get_nth_field(node->row, 0);
-  if (!dfield_is_null(row_id_dfield)
-    && node->index->is_clustered()
-    && !static_cast<std::string>(node->table->name.m_name).starts_with("mysql")
-    ) {
-    const void *row_id = dfield_get_data(row_id_dfield);
-    ulint row_id_len = dfield_get_len(row_id_dfield);
-
-    if (row_id != nullptr && row_id_len > 0) {
-      // Interpret the row ID as a number
-      uint64_t id = 0;
-      const uint8_t *byte_ptr = static_cast<const uint8_t *>(row_id);
-
-      // Construct the ID assuming big-endian format
-      for (ulint i = 0; i < row_id_len; ++i) {
-        id = (id << 8) | byte_ptr[i];
-      }
-
-      event_print(node->trx_id, EVENT_TYPE_INSERT, node->table->name.m_name, id, 0);
-    }
-  }
-
   if (err != DB_SUCCESS) {
     return err;
   }
 
   ut_ad(dtuple_check_typed(node->entry));
+
+  /******************************************************************//**
+  IsoFuzz: Insert Operation Logging
+  **********************************************************************/
+  /* GUARD: Only run on user tables and only on the clustered index to log once per row. */
+  if (node->index->is_clustered() && !node->table->is_dd_table && !node->table->is_intrinsic()) {
+    trx_t* trx = thr_get_trx(thr);
+
+    // An insert affects all columns. For simplicity, we can log the primary key column
+    // as the representative object for this event.
+    const dict_field_t* pk_field = node->index->get_field(0);
+    dfield_t* row_pk_dfield = dtuple_get_nth_field(node->row, 0);
+
+    // Extract the primary key value being inserted.
+    ulint pk_len;
+    const byte* pk_data = static_cast<const byte*>(dfield_get_data(row_pk_dfield));
+    pk_len = dfield_get_len(dtuple_get_nth_field(node->row, 0));
+
+    uint64_t pk_val = 0;
+    if (pk_len != UNIV_SQL_NULL && pk_len <= sizeof(uint64_t)) {
+      for (ulint i = 0; i < pk_len; ++i) {
+        pk_val = (pk_val << 8) | pk_data[i];
+      }
+    }
+
+    IsoFuzzObject obj;
+    obj.table_name = node->table->name.m_name;
+    obj.column_name = pk_field->name;
+    obj.row_identifier = pk_val;
+
+    // Use the new generic API. last_writer_trx_id is 0 for an insert.
+    isofuzz_schedule_operation(trx);
+    isofuzz_log_column_operation(static_cast<isofuzz_trx_handle_t>(trx),
+                              IsoFuzzOpType::WRITE_INSERT, obj, 0);
+  }
+  /* End of IsoFuzz Insert Operation Logging */
 
   err = row_ins_index_entry(node->index, node->entry, node->ins_multi_val_pos,
                             thr);

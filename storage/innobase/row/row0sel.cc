@@ -55,6 +55,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_innodb.h"
 #include "ha_prototypes.h"
 #include "handler.h"
+#include "isofuzz0isofuzz.h"
 #include "lob0lob.h"
 #include "lob0undo.h"
 #include "lock0lock.h"
@@ -4426,10 +4427,14 @@ It also has optimization such as pre-caching the rows, using AHI, etc.
 dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
                         row_prebuilt_t *prebuilt, ulint match_mode,
                         const ulint direction) {
+  /* IsoFuzz: At the start of a new search, clear any stale tentative reads. */
+  if (direction == 0 && prebuilt->trx != nullptr) {
+    prebuilt->trx->m_tentative_reads.clear();
+  }
+
   DBUG_TRACE;
 
   dict_index_t *index = prebuilt->index;
-  bool accepted_read = false;
   bool comp = dict_table_is_comp(index->table);
   const dtuple_t *search_tuple = prebuilt->search_tuple;
   btr_pcur_t *pcur = prebuilt->pcur;
@@ -4919,7 +4924,6 @@ dberr_t row_search_mvcc(byte *buf, page_cur_mode_t mode,
 
       offsets = rec_get_offsets(next_rec, index, offsets, ULINT_UNDEFINED,
                                 UT_LOCATION_HERE, &heap);
-      trx_scheduler_request(trx, EVENT_TYPE_READ);
       err = sel_set_rec_lock(pcur, next_rec, index, offsets,
                              prebuilt->select_mode, prebuilt->select_lock_type,
                              LOCK_GAP, thr, &mtr);
@@ -5033,7 +5037,6 @@ rec_loop:
 
       offsets = rec_get_offsets(rec, index, offsets, ULINT_UNDEFINED,
                                 UT_LOCATION_HERE, &heap);
-      trx_scheduler_request(trx, EVENT_TYPE_READ);
       err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                              prebuilt->select_lock_type, LOCK_ORDINARY, thr,
                              &mtr);
@@ -5120,6 +5123,53 @@ rec_loop:
   offsets = rec_get_offsets(rec, index, offsets, ULINT_UNDEFINED,
                             UT_LOCATION_HERE, &heap);
 
+  /******************************************************************//**
+    IsoFuzz: Tentative Read Capture (Phase 1 - Priming)
+    If we are scanning a secondary index, capture the predicate column and
+    the primary key value from the secondary record. We don't know the
+    writer's trx_id yet.
+    **********************************************************************/
+  if (prebuilt->trx != nullptr && !prebuilt->table->is_dd_table && !prebuilt->table->is_intrinsic()
+    && btr_page_get_level(pcur->get_page()) == 0) {
+
+    /* This hook is for secondary indexes only. */
+    if (!index->is_clustered()) {
+      trx_t* current_trx = prebuilt->trx;
+      const dtuple_t* search_tuple = prebuilt->search_tuple;
+      uint64_t pk_val = 0;
+
+      /* Get the primary key value from the secondary index record.
+      The PK fields are always appended after the user-defined columns.
+      The first PK column is at index n_user_defined_cols. */
+
+      /* THE FIX IS HERE: Use n_user_defined_cols instead of n_fields */
+      ulint first_pk_col_idx = index->n_user_defined_cols;
+
+      ulint pk_len;
+      const byte* pk_data = rec_get_nth_field(index, rec, offsets, first_pk_col_idx, &pk_len);
+
+      if (pk_len != UNIV_SQL_NULL && pk_len <= sizeof(uint64_t)) {
+        for (ulint i = 0; i < pk_len; ++i) {
+          pk_val = (pk_val << 8) | pk_data[i];
+        }
+      }
+
+      for (ulint i = 0; i < dtuple_get_n_fields(search_tuple); ++i) {
+        const dict_field_t* field_def = index->get_field(i);
+
+        trx_t::TentativeRead tread;
+        tread.table_name = index->table_name;
+        tread.column_name = field_def->name;
+        tread.primary_key_val = pk_val;
+        tread.row_identifier = 0;
+        tread.writer_trx_id = 0;
+        tread.is_enriched = false;
+        current_trx->m_tentative_reads.push_back(tread);
+      }
+    }
+  }
+  /* End of IsoFuzz Tentative Read Capture */
+
   if (UNIV_UNLIKELY(srv_force_recovery > 0)) {
     if (!rec_validate(rec, offsets) ||
         !btr_index_rec_validate(rec, index, false)) {
@@ -5154,7 +5204,6 @@ rec_loop:
       if (set_also_gap_locks && !trx->skip_gap_locks() &&
           prebuilt->select_lock_type != LOCK_NONE &&
           !dict_index_is_spatial(index)) {
-        trx_scheduler_request(trx, EVENT_TYPE_READ);
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
 
@@ -5189,7 +5238,6 @@ rec_loop:
       if (set_also_gap_locks && !trx->skip_gap_locks() &&
           prebuilt->select_lock_type != LOCK_NONE &&
           !dict_index_is_spatial(index)) {
-        trx_scheduler_request(trx, EVENT_TYPE_READ);
         err = sel_set_rec_lock(pcur, rec, index, offsets, prebuilt->select_mode,
                                prebuilt->select_lock_type, LOCK_GAP, thr, &mtr);
 
@@ -5248,7 +5296,6 @@ rec_loop:
     const bool use_semi_consistent =
         prebuilt->row_read_type == ROW_READ_TRY_SEMI_CONSISTENT &&
         !unique_search && index == clust_index && !trx_is_high_priority(trx);
-    trx_scheduler_request(trx, EVENT_TYPE_READ);
     err = sel_set_rec_lock(
         pcur, rec, index, offsets,
         use_semi_consistent ? SELECT_SKIP_LOCKED : prebuilt->select_mode,
@@ -5272,7 +5319,6 @@ rec_loop:
         break;
       case DB_SKIP_LOCKED:
         if (prebuilt->select_mode == SELECT_SKIP_LOCKED) {
-          accepted_read = false;
           goto next_rec;
         }
         DEBUG_SYNC_C("semi_consistent_read_would_wait");
@@ -5288,7 +5334,6 @@ rec_loop:
 
         if (old_vers == nullptr) {
           /* The row was not yet committed */
-          accepted_read = false;
           goto next_rec;
         }
 
@@ -5309,7 +5354,6 @@ rec_loop:
         goto lock_wait_or_error;
       case DB_RECORD_NOT_FOUND:
         if (dict_index_is_spatial(index)) {
-          accepted_read = false;
           goto next_rec;
         } else {
           goto lock_wait_or_error;
@@ -5355,7 +5399,6 @@ rec_loop:
           /* The row did not exist yet in
           the read view */
 
-          accepted_read = false;
           goto next_rec;
         }
 
@@ -5383,7 +5426,6 @@ rec_loop:
         index entry. */
         switch (row_search_idx_cond_check(buf, prebuilt, rec, offsets)) {
           case ICP_NO_MATCH:
-            accepted_read = false;
             goto next_rec;
           case ICP_OUT_OF_RANGE:
             err = DB_RECORD_NOT_FOUND;
@@ -5439,7 +5481,6 @@ rec_loop:
       goto normal_return;
     }
 
-    accepted_read = false;
     goto next_rec;
   }
 
@@ -5447,7 +5488,6 @@ rec_loop:
   switch (row_search_idx_cond_check(buf, prebuilt, rec, offsets)) {
     case ICP_NO_MATCH:
       prebuilt->try_unlock(true);
-      accepted_read = false;
       goto next_rec;
     case ICP_OUT_OF_RANGE:
       err = DB_RECORD_NOT_FOUND;
@@ -5489,12 +5529,10 @@ rec_loop:
           ut_ad(prebuilt->select_lock_type == LOCK_NONE ||
                 dict_index_is_spatial(index));
 
-          accepted_read = false;
           goto next_rec;
         }
         break;
       case DB_SKIP_LOCKED:
-        accepted_read = false;
         goto next_rec;
       case DB_SUCCESS_LOCKED_REC:
         ut_a(clust_rec != nullptr);
@@ -5519,7 +5557,6 @@ rec_loop:
       match and calls unlock_row(). */
       prebuilt->try_unlock(true);
 
-      accepted_read = false;
       goto next_rec;
     }
 
@@ -5549,7 +5586,6 @@ rec_loop:
       if (!row_sel_store_mysql_rec(buf, prebuilt, result_rec, vrow, true,
                                    clust_index, prebuilt->index, offsets, false,
                                    nullptr, prebuilt->blob_heap)) {
-        accepted_read = false;
         goto next_rec;
       }
     }
@@ -5596,7 +5632,6 @@ rec_loop:
     result_rec = rec;
   }
 
-  accepted_read = true;
 
   /* We found a qualifying record 'result_rec'. At this point,
   'offsets' are associated with 'result_rec'. */
@@ -5669,7 +5704,6 @@ rec_loop:
         level or when rolling back a recovered
         transaction. Rollback happens at a lower
         level, not here. */
-        accepted_read = false;
         goto next_rec;
       }
 
@@ -5714,11 +5748,9 @@ rec_loop:
 
       if (next_buf != buf) {
         row_sel_enqueue_cache_row_for_mysql(next_buf, prebuilt);
-        accepted_read = true;
       }
     } else {
       row_sel_enqueue_cache_row_for_mysql(buf, prebuilt);
-      accepted_read = true;
     }
 
     if (prebuilt->n_fetch_cached < max_rows_to_cache) {
@@ -5746,7 +5778,6 @@ rec_loop:
       memcpy(buf + 4, result_rec - rec_offs_extra_size(offsets),
              rec_offs_size(offsets));
       mach_write_to_4(buf, rec_offs_extra_size(offsets) + 4);
-      accepted_read = true;
     } else if (!prebuilt->idx_cond && !prebuilt->innodb_api) {
       /* The record was not yet converted to MySQL format. */
       if (!row_sel_store_mysql_rec(
@@ -5761,10 +5792,7 @@ rec_loop:
         isolation level or when rolling back a
         recovered transaction. Rollback
         happens at a lower level, not here. */
-        accepted_read = false;
         goto next_rec;
-      } else {
-        accepted_read = true;
       }
     }
 
@@ -5784,7 +5812,93 @@ rec_loop:
   HANDLER command where the user can move the cursor with PREV or NEXT
   even after a unique search. */
 
-  accepted_read = true;
+
+/******************************************************************//**
+  IsoFuzz: Enrichment and Logging (Phase 2)
+  We have a confirmed clustered record ('result_rec'). We can now safely
+  get its version and correlate it with any tentative reads we primed earlier.
+  **********************************************************************/
+  if (prebuilt->trx != nullptr && !prebuilt->table->is_dd_table && !prebuilt->table->is_intrinsic()) {
+    trx_t *current_trx = prebuilt->trx;
+    dict_index_t *result_index = (result_rec != rec) ? clust_index : index;
+
+    // We only proceed if we have the final clustered index record, which
+    // contains the writer ID.
+    if (result_index->is_clustered()) {
+      // --- Enrichment Phase ---
+      trx_id_t result_writer_id = rec_get_trx_id(result_rec, result_index);
+      uint64_t final_pk_val = 0;
+
+      ulint pk_len;
+      const byte *pk_data =
+          rec_get_nth_field(result_index, result_rec, offsets, 0, &pk_len);
+      if (pk_len != UNIV_SQL_NULL && pk_len <= sizeof(uint64_t)) {
+        for (ulint i = 0; i < pk_len; ++i) {
+          final_pk_val = (final_pk_val << 8) | pk_data[i];
+        }
+      }
+
+      bool was_enriched = false;
+      for (auto &tread : current_trx->m_tentative_reads) {
+        // Find a tentative read that matches the PK of our final result record
+        // AND which has not yet been enriched with a writer ID.
+        if (tread.primary_key_val == final_pk_val && !tread.is_enriched) {
+          tread.writer_trx_id = result_writer_id;
+          tread.row_identifier = final_pk_val;
+          tread.is_enriched = true;
+          was_enriched = true;
+        }
+      }
+
+      // If no tentative read was found (e.g., this was a direct clustered index
+      // scan), create a new enriched read for the primary key.
+      if (!was_enriched) {
+        trx_t::TentativeRead tread;
+        tread.table_name = result_index->table_name;
+        tread.column_name = result_index->get_field(0)->name;
+        tread.primary_key_val = final_pk_val;
+        tread.row_identifier = final_pk_val;
+        tread.writer_trx_id = result_writer_id;
+        tread.is_enriched = true;
+        current_trx->m_tentative_reads.push_back(tread);
+      }
+
+      // --- Scheduling and Logging Phase ---
+      //
+      // FIX FOR READ DUPLICATES: Only schedule if there are enriched, unlogged
+      // reads. This check prevents scheduling empty operations.
+      bool has_enriched_reads = false;
+      for (const auto &tread : current_trx->m_tentative_reads) {
+        if (tread.is_enriched) {
+          has_enriched_reads = true;
+          break;
+        }
+      }
+
+      if (has_enriched_reads) {
+        isofuzz_schedule_operation(
+            static_cast<isofuzz_trx_handle_t>(current_trx));
+
+        for (const auto &tread : current_trx->m_tentative_reads) {
+          if (tread.is_enriched) {
+            IsoFuzzObject obj;
+            obj.table_name = tread.table_name;
+            obj.column_name = tread.column_name;
+            obj.row_identifier = tread.row_identifier;
+
+            isofuzz_log_column_operation(
+                static_cast<isofuzz_trx_handle_t>(current_trx),
+                IsoFuzzOpType::READ, obj, tread.writer_trx_id);
+          }
+        }
+        // Clear the vector AFTER logging to prevent any possibility of
+        // re-logging.
+        current_trx->m_tentative_reads.clear();
+      }
+    }
+  }
+  /* End of IsoFuzz Enrichment and Logging */
+
   err = DB_SUCCESS;
 
 idx_cond_failed:
@@ -5913,29 +6027,6 @@ next_rec:
 #endif /* UNIV_DEBUG */
     }
   }
-
-  if (!static_cast<std::string>(index->table_name).starts_with("mysql")
-    && rec != NULL
-    && accepted_read
-    && !page_rec_is_infimum_low(page_offset(rec))
-    && !page_rec_is_supremum_low(page_offset(rec))
-    && index->is_clustered()
-  ) {
-    const void *row_id = rec;
-
-    // Interpret the row ID as a number
-    uint64_t id = 0;
-    const uint8_t *byte_ptr = static_cast<const uint8_t *>(row_id);
-
-    // Construct the ID assuming big-endian format
-    for (ulint i = 0; i < 4; ++i) {
-      id = (id << 8) | byte_ptr[i];
-    }
-
-    event_print(trx->id, EVENT_TYPE_READ, index->table_name, id, rec_get_trx_id(rec, index));
-  }
-  accepted_read = false;
-  trx_scheduler_release(trx);
 
   if (moves_up) {
     bool move;
@@ -6131,7 +6222,6 @@ func_exit:
 
   ut_a(!trx->has_search_latch);
 
-  trx_scheduler_release(trx);
   return err;
 }
 

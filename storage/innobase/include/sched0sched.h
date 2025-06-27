@@ -9,7 +9,7 @@
 
 void init_scheduler_if_needed();
 
-void trx_scheduler_request(trx_t *trx, event_type_t event_type);
+void trx_scheduler_request(trx_t *trx);
 
 void trx_scheduler_release(trx_t *trx);
 

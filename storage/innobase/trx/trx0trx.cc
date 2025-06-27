@@ -1319,7 +1319,10 @@ static void trx_start_low(
   ut_ad(!(trx->in_innodb & TRX_FORCE_ROLLBACK));
   ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
 
-  trx_scheduler_request(trx, EVENT_TYPE_BEGIN);
+  /* IsoFuzz: Control the start of the transaction. The event_type is now
+   * unused by the new scheduler but kept for backward compatibility during the change.
+   */
+  trx_scheduler_request(trx);
   ++trx->version;
 
   /* Check whether it is an AUTOCOMMIT SELECT */
@@ -1459,9 +1462,6 @@ static void trx_start_low(
   }
 
   ut_a(trx->error_state == DB_SUCCESS);
-  event_print_basic(trx->id, EVENT_TYPE_BEGIN);
-
-  trx_scheduler_release(trx);
   MONITOR_INC(MONITOR_TRX_ACTIVE);
 }
 
@@ -2175,8 +2175,8 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
   assert_trx_nonlocking_or_in_list(trx);
   ut_ad(!trx_state_eq(trx, TRX_STATE_COMMITTED_IN_MEMORY));
   ut_ad(!mtr || mtr->is_active());
-  trx_scheduler_request(trx, EVENT_TYPE_COMMIT);
-  trx_id_t trx_id = trx->id;
+  /* IsoFuzz: Control the commit of the transaction. */
+  trx_scheduler_request(trx);
   /* undo_no is non-zero if we're doing the final commit. */
   if (trx->fts_trx != nullptr && trx->undo_no != 0 &&
       trx->lock.que_state != TRX_QUE_ROLLING_BACK) {
@@ -2262,8 +2262,6 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
 #endif
 
   trx_commit_in_memory(trx, mtr, serialised);
-  trx_scheduler_release(trx);
-  event_print_basic(trx_id, EVENT_TYPE_COMMIT);
 }
 
 /** Commits a transaction. */
@@ -3426,95 +3424,6 @@ void trx_start_internal_read_only_low(trx_t *trx) {
   trx_start_low(trx, false);
 }
 
-/**
-Converts an event type to its string representation.
-@param[in] event_type   Event type
-@return String representation of the event type
-*/
-static const char* event_type_to_string(event_type_t event_type) {
-    switch (event_type) {
-        case EVENT_TYPE_BEGIN: return "BEGIN";
-        case EVENT_TYPE_COMMIT: return "COMMIT";
-        case EVENT_TYPE_PROMOTE: return "PROMOTE";
-        case EVENT_TYPE_READ: return "READ";
-        case EVENT_TYPE_UPDATE: return "UPDATE";
-        case EVENT_TYPE_INSERT: return "INSERT";
-        default: return "UNKNOWN";
-    }
-}
-
-static std::ofstream g_file;
-static std::mutex file_lock;
-static std::ostream& get_out_stream() {
-  static bool init = false;
-  static std::ostream* out_ptr = &std::cout;
-  if (!init) {
-    init = true;
-    const char* path = std::getenv("OUT_FILE");
-    if (path) {
-      g_file.open(path, std::ios::out | std::ios::app);
-      if (g_file.is_open()) {
-        out_ptr = &g_file;
-      }
-    }
-  }
-  return *out_ptr;
-}
-
-/**
-Prints a basic transaction event (begin, commit, promote).
-@param[in] trx_id      Transaction ID
-@param[in] event_type  Event type (must be EVENT_TYPE_BEGIN, EVENT_TYPE_COMMIT, or EVENT_TYPE_PROMOTE)
-*/
-void event_print_basic(trx_id_t trx_id, event_type_t event_type) {
-    assert(event_type == EVENT_TYPE_BEGIN || event_type == EVENT_TYPE_COMMIT || event_type == EVENT_TYPE_PROMOTE);
-
-    std::basic_stringstream<char> result;
-
-    result << std::this_thread::get_id() << "\t"
-              << trx_id << "\t"
-              << event_type_to_string(event_type) << std::endl;
-
-    std::unique_lock lock(file_lock);
-    get_out_stream() << result.str();
-}
-
-/**
-Prints a detailed transaction event (read, update, insert).
-@param[in] trx_id             Transaction ID
-@param[in] event_type         Event type (must be EVENT_TYPE_READ, EVENT_TYPE_UPDATE, or EVENT_TYPE_INSERT)
-@param[in] table_name         Name of the table being operated on
-@param[in] object_id          ID of the object being read, updated, or inserted
-@param[in] last_writer_trx_id Transaction ID of the last transaction to modify this object
-                              (must be 0 for EVENT_TYPE_INSERT)
-*/
-void event_print(trx_id_t trx_id, event_type_t event_type, const char *table_name, uint64_t object_id, trx_id_t last_writer_trx_id) {
-    /* Ensure the event type is valid for detailed events */
-    assert(event_type == EVENT_TYPE_READ || event_type == EVENT_TYPE_UPDATE || event_type == EVENT_TYPE_INSERT);
-
-    /* Ensure last_writer_trx_id is 0 for inserts */
-    if (event_type == EVENT_TYPE_INSERT) {
-        assert(last_writer_trx_id == 0);
-    }
-
-    std::basic_stringstream<char> result;
-
-    result << std::this_thread::get_id() << "\t"
-              << trx_id << "\t"
-              << event_type_to_string(event_type) << "\t"
-              << table_name << "\t"
-              << object_id << "\t";
-
-    /* Only print last_writer_trx_id if applicable */
-    if (event_type == EVENT_TYPE_READ || event_type == EVENT_TYPE_UPDATE) {
-        result << last_writer_trx_id;
-    }
-
-    result << std::endl;
-    std::unique_lock lock(file_lock);
-    get_out_stream() << result.str();
-}
-
 /** Set the transaction as a read-write transaction if it is not already
  tagged as such. Read-only transactions that are writing to temporary
  tables are assigned an ID and a rollback segment but are not added
@@ -3562,8 +3471,6 @@ void trx_set_rw_mode(trx_t *trx) /*!< in/out: transaction that is RW */
   trx_sys_mutex_exit();
 
   trx_sys_rw_trx_add(trx);
-
-  event_print_basic(trx->id, EVENT_TYPE_PROMOTE);
 }
 
 void trx_kill_blocking(trx_t *trx) {

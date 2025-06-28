@@ -57,6 +57,28 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_SOURCE_DIR}/sql/auth
 )
 
+
+# ========================================================================
+# IsoFuzz Integration
+# ========================================================================
+# Tell CMake where to find the IsoFuzz package configuration files.
+set(ISOFUZZ_INSTALL_DIR "/path/to/your/libisofuzz/build/install" CACHE PATH "Path to IsoFuzz installation")
+message(STATUS "Looking for IsoFuzz in: ${ISOFUZZ_INSTALL_DIR}")
+
+# Use find_package to locate the library and its targets.
+# The 'CONFIG' mode tells it to look for the *Config.cmake files.
+find_package(isofuzz 1.0.0 REQUIRED CONFIG
+        HINTS ${ISOFUZZ_INSTALL_DIR}/lib/cmake/isofuzz)
+
+if(isofuzz_FOUND)
+  message(STATUS "Found IsoFuzz: ${isofuzz_VERSION}")
+else()
+  message(FATAL_ERROR "IsoFuzz library not found. Please build and install it first.")
+endif()
+# ========================================================================
+
+
+
 # Conflicting YYSTYPE, because we have multiple Bison grammars.
 # WL#11100 Migrate to Bison 3.x should fix this.
 #
@@ -237,8 +259,7 @@ SET(INNOBASE_SOURCES
   row/row0upd.cc
   row/row0quiesce.cc
   row/row0vers.cc
-  sched/sched0sched.cc
-  isofuzz/isofuzz0isofuzz.cc
+  isofuzz/isofuzz_mysql_adapter.cc
   srv/srv0conc.cc
   srv/srv0mon.cc
   srv/srv0srv.cc
@@ -355,6 +376,8 @@ MYSQL_ADD_PLUGIN(innobase
   MODULE_OUTPUT_NAME ha_innodb
   LINK_LIBRARIES sql_dd sql_gis ext::zlib ext::lz4 ${NUMA_LIBRARY}
                  extra::rapidjson)
+
+target_link_libraries(innobase isofuzz)
 
 # On linux: /usr/include/stdio.h:#define BUFSIZ 8192
 # On Solaris: /usr/include/iso/stdio_iso.h:#define    BUFSIZ  1024

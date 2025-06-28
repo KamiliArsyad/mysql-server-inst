@@ -61,8 +61,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "trx0rseg.h"
 #include "trx0trx.h"
 
-#include <sched0sched.h>
-
+#include "isofuzz_mysql_adapter.h"
 #include "trx0undo.h"
 #include "trx0xa.h"
 #include "usr0sess.h"
@@ -1319,10 +1318,8 @@ static void trx_start_low(
   ut_ad(!(trx->in_innodb & TRX_FORCE_ROLLBACK));
   ut_ad(trx_can_be_handled_by_current_thread_or_is_hp_victim(trx));
 
-  /* IsoFuzz: Control the start of the transaction. The event_type is now
-   * unused by the new scheduler but kept for backward compatibility during the change.
-   */
-  trx_scheduler_request(trx);
+  /* IsoFuzz: Control the start of the transaction.*/
+  adapter_trx_start(trx);
   ++trx->version;
 
   /* Check whether it is an AUTOCOMMIT SELECT */
@@ -2176,7 +2173,7 @@ void trx_commit_low(trx_t *trx, mtr_t *mtr) {
   ut_ad(!trx_state_eq(trx, TRX_STATE_COMMITTED_IN_MEMORY));
   ut_ad(!mtr || mtr->is_active());
   /* IsoFuzz: Control the commit of the transaction. */
-  trx_scheduler_request(trx);
+  adapter_trx_commit(trx);
   /* undo_no is non-zero if we're doing the final commit. */
   if (trx->fts_trx != nullptr && trx->undo_no != 0 &&
       trx->lock.que_state != TRX_QUE_ROLLING_BACK) {
@@ -3467,6 +3464,8 @@ void trx_set_rw_mode(trx_t *trx) /*!< in/out: transaction that is RW */
     MVCC::set_view_creator_trx_id(trx->read_view, trx->id);
   }
   trx_add_to_rw_trx_list(trx);
+
+  adapter_trx_promote(trx);
 
   trx_sys_mutex_exit();
 

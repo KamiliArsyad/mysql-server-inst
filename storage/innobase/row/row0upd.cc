@@ -73,11 +73,10 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "row0sel.h"
 #include "trx0rec.h"
 #endif /* !UNIV_HOTBACKUP */
-#include <sched0sched.h>
 
 #include <algorithm>
 
-#include "isofuzz0isofuzz.h"
+#include "isofuzz_mysql_adapter.h"
 #include "lob0lob.h"
 #ifndef UNIV_HOTBACKUP
 #include "current_thd.h"
@@ -3089,7 +3088,7 @@ func_exit:
     trx_t* trx = thr_get_trx(thr);
 
     // Schedule the entire logical operation ONCE.
-    isofuzz_schedule_operation(static_cast<isofuzz_trx_handle_t>(trx));
+    adapter_schedule_op(trx, IsoFuzzSchedulerIntent::OP_WRITE);
 
     trx_id_t writer_trx_id = rec_get_trx_id(rec, index);
 
@@ -3116,8 +3115,8 @@ func_exit:
       obj.row_identifier = pk_val;
 
       // Log this single event and we are done.
-      isofuzz_log_column_operation(static_cast<isofuzz_trx_handle_t>(trx),
-                                IsoFuzzOpType::WRITE_UPDATE, obj, writer_trx_id);
+      adapter_log_op(trx,
+        IsoFuzzOpType::WRITE_DELETE, obj, writer_trx_id);
     } else {
       // This is a standard UPDATE. Log one event for each modified column.
       for (ulint i = 0; i < upd_get_n_fields(node->update); ++i) {
@@ -3129,8 +3128,7 @@ func_exit:
         obj.column_name = dfield->name;
         obj.row_identifier = pk_val;
 
-        isofuzz_log_column_operation(static_cast<isofuzz_trx_handle_t>(trx),
-                                  IsoFuzzOpType::WRITE_UPDATE, obj, writer_trx_id);
+        adapter_log_op(trx, IsoFuzzOpType::WRITE_UPDATE, obj, writer_trx_id);
       }
     }
   }

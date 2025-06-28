@@ -63,9 +63,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "usr0sess.h"
 
 #include <debug_sync.h>
-#include <sched0sched.h>
 
-#include "isofuzz0isofuzz.h"
+#include "isofuzz_mysql_adapter.h"
 #include "my_dbug.h"
 
 /*************************************************************************
@@ -3458,15 +3457,13 @@ dberr_t row_ins_index_entry_set_vals(const dict_index_t *index, dtuple_t *entry,
     obj.row_identifier = pk_val;
 
     // Use the new generic API. last_writer_trx_id is 0 for an insert.
-    isofuzz_schedule_operation(trx);
-    isofuzz_log_column_operation(static_cast<isofuzz_trx_handle_t>(trx),
-                              IsoFuzzOpType::WRITE_INSERT, obj, 0);
+    adapter_schedule_op(trx, IsoFuzzSchedulerIntent::OP_WRITE);
+    adapter_log_op(trx, IsoFuzzOpType::WRITE_INSERT, obj, 0);
   }
   /* End of IsoFuzz Insert Operation Logging */
 
   err = row_ins_index_entry(node->index, node->entry, node->ins_multi_val_pos,
                             thr);
-  trx_scheduler_release(thr_get_trx(thr));
 
   DEBUG_SYNC(thr_get_trx(thr)->mysql_thd, "after_row_ins_index_entry_step");
 

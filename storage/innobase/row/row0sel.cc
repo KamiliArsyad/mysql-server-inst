@@ -40,7 +40,6 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 #include "row0sel.h"
 
-#include <sched0sched.h>
 #include <sys/types.h>
 
 #include "btr0btr.h"
@@ -55,7 +54,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "ha_innodb.h"
 #include "ha_prototypes.h"
 #include "handler.h"
-#include "isofuzz0isofuzz.h"
+#include "isofuzz_mysql_adapter.h"
 #include "lob0lob.h"
 #include "lob0undo.h"
 #include "lock0lock.h"
@@ -5876,8 +5875,7 @@ rec_loop:
       }
 
       if (has_enriched_reads) {
-        isofuzz_schedule_operation(
-            static_cast<isofuzz_trx_handle_t>(current_trx));
+        adapter_schedule_op(current_trx, IsoFuzzSchedulerIntent::OP_READ);
 
         for (const auto &tread : current_trx->m_tentative_reads) {
           if (tread.is_enriched) {
@@ -5886,9 +5884,8 @@ rec_loop:
             obj.column_name = tread.column_name;
             obj.row_identifier = tread.row_identifier;
 
-            isofuzz_log_column_operation(
-                static_cast<isofuzz_trx_handle_t>(current_trx),
-                IsoFuzzOpType::READ, obj, tread.writer_trx_id);
+            adapter_log_op(current_trx,
+              IsoFuzzOpType::READ, obj, tread.writer_trx_id);
           }
         }
         // Clear the vector AFTER logging to prevent any possibility of

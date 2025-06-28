@@ -96,8 +96,8 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "usr0sess.h"
 #include "ut0crc32.h"
 #endif /* !UNIV_HOTBACKUP */
-#include <sched0sched.h>
 
+#include "isofuzz_mysql_adapter.h"
 #include "ut0mem.h"
 
 #ifdef UNIV_HOTBACKUP
@@ -2487,8 +2487,6 @@ static bool srv_master_do_shutdown_tasks(
     return state == SRV_SHUTDOWN_MASTER_STOP ||
            state == SRV_SHUTDOWN_EXIT_THREADS;
   }));
-
-  trx_shutdown_scheduler();
 
   /* In very fast shutdown none of the following is necessary */
   if (srv_fast_shutdown >= 1) {

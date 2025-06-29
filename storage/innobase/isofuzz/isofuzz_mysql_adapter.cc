@@ -23,13 +23,12 @@ void adapter_trx_start(trx_t *trx) {
     std::lock_guard<std::mutex> lock(g_trx_map_mutex);
     g_trx_map[trx] = handle;
   }
-  isofuzz_schedule_op(handle, IsoFuzzSchedulerIntent::TXN_BEGIN);
 }
 
 void adapter_trx_commit(trx_t *trx) {
   isofuzz_trx_t handle = get_trx_handle(trx);
   if (!handle) return;
-  isofuzz_schedule_op(handle, IsoFuzzSchedulerIntent::TXN_COMMIT);
+  isofuzz_trx_commit(handle);
   isofuzz_trx_end(handle);
   {
     std::lock_guard<std::mutex> lock(g_trx_map_mutex);
